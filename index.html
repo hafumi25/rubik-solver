@@ -150,6 +150,8 @@
             color: white;
             border-color: var(--primary-blue);
             margin-top: 10px;
+            font-size: 15px;
+            padding: 14px 20px;
         }
         .action-btn.solve-btn:hover:not(:disabled) { background: var(--primary-blue-hover); }
 
@@ -198,18 +200,7 @@
         }
 
         .control-btn:hover:not(:disabled) { background: var(--btn-bg); }
-        .control-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        
-        .control-btn.primary {
-            background: var(--primary-blue);
-            color: white;
-            border-color: var(--primary-blue);
-            width: 50px;
-            height: 50px;
-            border-radius: 12px;
-            font-size: 20px;
-        }
-        .control-btn.primary:hover:not(:disabled) { background: var(--primary-blue-hover); }
+        .control-btn:disabled { opacity: 0.4; cursor: not-allowed; }
         
         .speed-control {
             padding: 8px;
@@ -226,7 +217,7 @@
             width: 100%;
             margin-bottom: 20px;
         }
-        input[type="range"] { width: 100%; accent-color: var(--primary-blue); }
+        input[type="range"] { width: 100%; accent-color: var(--primary-blue); cursor: pointer; }
 
         .move-list-title {
             font-size: 14px;
@@ -324,6 +315,7 @@
             🎲 Generate Random Scramble
         </button>
 
+        <!-- MAIN TOGGLE BUTTON -->
         <button class="action-btn solve-btn" id="btn-calculate" disabled>
             ⚡ Solve Current Cube State
         </button>
@@ -331,26 +323,25 @@
         <div class="move-list-title" id="move-count-text" style="margin-top:20px;">Solution:</div>
         <div class="moves-grid" id="moves-grid"></div>
 
-        <!-- NEW CONTROL ROW WITH SPEED AND SKIP -->
+        <div class="slider-container">
+            <input type="range" id="progress-slider" min="0" max="100" value="0">
+        </div>
+
+        <!-- STEP CONTROLS -->
         <div class="controls-row">
             <div class="controls">
-                <button class="control-btn" id="btn-prev" title="Previous Move">⏮</button>
-                <button class="control-btn primary" id="btn-play" title="Play">▶</button>
-                <button class="control-btn" id="btn-pause" title="Pause">⏸</button>
-                <button class="control-btn" id="btn-next" title="Next Move">⏭</button>
+                <button class="control-btn" id="btn-prev" title="Previous Move" disabled>⏮</button>
+                <button class="control-btn" id="btn-next" title="Next Move" disabled>⏭</button>
+                <button class="control-btn" id="btn-skip" title="Skip to End" disabled>⏩</button>
             </div>
             <div style="display:flex; gap: 8px; align-items:center;">
                 <select id="speed-control" class="speed-control">
-                    <option value="500">Slow</option>
-                    <option value="250" selected>Normal</option>
+                    <option value="600">Slow</option>
+                    <option value="300" selected>Normal</option>
                     <option value="100">Fast</option>
                 </select>
                 <button class="control-btn" id="btn-stop" title="Reset to Start">↺</button>
             </div>
-        </div>
-
-        <div class="slider-container">
-            <input type="range" id="progress-slider" min="0" max="100" value="0">
         </div>
 
         <div class="guide-overlay" style="position:static; margin-top:auto; box-shadow:none; padding:0; background:transparent;">
@@ -379,14 +370,24 @@
 
     let activeColor = null; 
     let isSolverReady = false;
-    let animationDuration = 200; // Default speed (ms per 90 degree turn)
+    let animationDuration = 200; // ms per quarter turn
 
     const container = document.getElementById('canvas-container');
     const loadingOverlay = document.getElementById('loading-overlay');
     const loadingText = document.getElementById('loading-text');
     const loadingSpinner = document.getElementById('loading-spinner');
 
-    // Wait for ALL scripts to finish loading before initializing
+    // Buttons
+    const btnCalculate = document.getElementById('btn-calculate');
+    const btnPrev = document.getElementById('btn-prev');
+    const btnNext = document.getElementById('btn-next');
+    const btnSkip = document.getElementById('btn-skip');
+    const btnReset = document.getElementById('btn-stop');
+    const btnRandomScramble = document.getElementById('btn-random-scramble');
+    const btnCustomScramble = document.getElementById('btn-custom-scramble');
+    const scrambleInput = document.getElementById('scramble-input');
+
+    // Wait for ALL scripts to finish loading
     window.addEventListener('load', () => {
         if (typeof Cube === 'undefined' || typeof Cube.initSolver !== 'function') {
             loadingText.innerHTML = `❌ Failed to load Solver Engine.<br><small style="color:red">Check internet connection and refresh.</small>`;
@@ -403,10 +404,10 @@
                 loadingOverlay.style.display = 'none';
                 
                 // Enable UI
-                document.getElementById('scramble-input').disabled = false;
-                document.getElementById('btn-custom-scramble').disabled = false;
-                document.getElementById('btn-random-scramble').disabled = false;
-                document.getElementById('btn-calculate').disabled = false;
+                scrambleInput.disabled = false;
+                btnCustomScramble.disabled = false;
+                btnRandomScramble.disabled = false;
+                btnCalculate.disabled = false;
             } catch (e) {
                 loadingText.innerHTML = `❌ Error: ${e.message || e}`;
                 console.error(e);
@@ -518,7 +519,10 @@
             intersect.object.material[intersect.face.materialIndex].color.setHex(activeColor);
             stopPlayback();
             solutionMoves = [];
+            currentMoveIndex = 0;
+            btnCalculate.innerHTML = "⚡ Solve Current Cube State";
             renderMoveList();
+            updateButtonStates();
         }
     });
 
@@ -536,6 +540,7 @@
     function rotateFace(move, callback) {
         if (isAnimating) return;
         isAnimating = true;
+        updateButtonStates();
 
         const face = move[0];
         const modifier = move.length > 1 ? move[1] : '';
@@ -593,17 +598,20 @@
     }
 
     function processQueue() {
-        if (moveQueue.length === 0 || isAnimating) return;
+        if (moveQueue.length === 0 || isAnimating) {
+            updateButtonStates();
+            return;
+        }
         const nextMove = moveQueue.shift();
         rotateFace(nextMove.move, nextMove.callback);
     }
 
     function executeMove(move, callback) {
         moveQueue.push({ move, callback });
+        updateButtonStates();
         if (!isAnimating && moveQueue.length === 1) processQueue();
     }
     
-    // Helper to reverse a move
     function getInverseMove(move) {
         if (move.endsWith("'")) return move[0];
         if (move.endsWith("2")) return move;
@@ -655,92 +663,7 @@
     }
 
     // ==========================================
-    // 7. UI ACTIONS
-    // ==========================================
-    document.getElementById('speed-control').onchange = (e) => {
-        const val = parseInt(e.target.value);
-        animationDuration = val === 100 ? 100 : (val === 250 ? 200 : 300); // Map dropdown to animation ms
-    };
-
-    document.getElementById('btn-calculate').onclick = () => {
-        if (!isSolverReady) return;
-        loadingText.textContent = "Calculating Solution...";
-        loadingSpinner.style.display = 'block';
-        loadingOverlay.style.display = 'flex';
-        
-        setTimeout(() => {
-            try {
-                const faceletString = getFaceletString();
-                const cube = Cube.fromString(faceletString);
-                const solutionString = cube.solve();
-                
-                if (solutionString) {
-                    solutionMoves = solutionString.trim().split(/\s+/);
-                    currentMoveIndex = 0;
-                    renderMoveList();
-                    isPlaying = true;
-                    playNextMove();
-                } else {
-                    alert("This cube state is invalid or unsolvable. Please check your colors.");
-                }
-            } catch (e) {
-                console.error(e);
-                alert("Error solving cube. Make sure you have exactly 9 of each color and standard centers.");
-            }
-            loadingOverlay.style.display = 'none';
-        }, 50);
-    };
-
-    document.getElementById('btn-random-scramble').onclick = () => {
-        stopPlayback();
-        solutionMoves = [];
-        renderMoveList();
-        const faces = ['R', 'L', 'U', 'D', 'F', 'B'];
-        const modifiers = ['', "'", '2'];
-        const scramble = [];
-        for (let i = 0; i < 20; i++) {
-            const face = faces[Math.floor(Math.random() * faces.length)];
-            if (scramble.length > 0 && scramble[scramble.length - 1][0] === face) { i--; continue; }
-            const mod = modifiers[Math.floor(Math.random() * modifiers.length)];
-            scramble.push(face + mod);
-        }
-        let scrambleIndex = 0;
-        function applyScramble() {
-            if (scrambleIndex < scramble.length) {
-                executeMove(scramble[scrambleIndex], () => { scrambleIndex++; applyScramble(); });
-            } else {
-                document.getElementById('btn-calculate').click();
-            }
-        }
-        applyScramble();
-    };
-
-    document.getElementById('btn-custom-scramble').onclick = () => {
-        const val = document.getElementById('scramble-input').value.trim().toUpperCase();
-        if (!val) return;
-        const moves = val.split(/\s+/);
-        const validMoves = [];
-        const regex = /^[RLUDFB](\'|2)?$/;
-        for (let m of moves) {
-            if (regex.test(m)) validMoves.push(m);
-            else { alert(`Invalid move: ${m}`); return; }
-        }
-        stopPlayback();
-        solutionMoves = [];
-        renderMoveList();
-        let idx = 0;
-        function applyScramble() {
-            if (idx < validMoves.length) {
-                executeMove(validMoves[idx], () => { idx++; applyScramble(); });
-            } else {
-                document.getElementById('btn-calculate').click();
-            }
-        }
-        applyScramble();
-    };
-
-    // ==========================================
-    // 8. PLAYBACK LOGIC
+    // 7. PLAYBACK & STATE LOGIC
     // ==========================================
     let solutionMoves = [];
     let currentMoveIndex = 0;
@@ -751,6 +674,28 @@
     const moveCountText = document.getElementById('move-count-text');
     const slider = document.getElementById('progress-slider');
 
+    // Handle Speed Dropdown
+    document.getElementById('speed-control').onchange = (e) => {
+        const val = parseInt(e.target.value);
+        animationDuration = val === 100 ? 100 : (val === 300 ? 200 : 350);
+    };
+
+    function updateButtonStates() {
+        const busy = isAnimating || moveQueue.length > 0;
+        
+        // Main solve toggle button state
+        if (solutionMoves.length === 0) {
+            btnCalculate.disabled = !isSolverReady;
+        } else {
+            btnCalculate.disabled = busy && isPlaying; 
+        }
+
+        // Step arrow states
+        btnPrev.disabled = busy || currentMoveIndex === 0;
+        btnNext.disabled = busy || currentMoveIndex >= solutionMoves.length;
+        btnSkip.disabled = busy || currentMoveIndex >= solutionMoves.length;
+    }
+
     function renderMoveList() {
         movesGrid.innerHTML = '';
         moveCountText.textContent = solutionMoves.length > 0 ? `Solution (${solutionMoves.length} moves):` : "Solution:";
@@ -758,6 +703,7 @@
             const badge = document.createElement('div');
             badge.className = `move-badge ${index === currentMoveIndex ? 'active' : ''}`;
             badge.textContent = move;
+            badge.onclick = () => jumpToMove(index);
             movesGrid.appendChild(badge);
         });
         slider.max = solutionMoves.length;
@@ -775,11 +721,61 @@
             }
         }
         slider.value = currentMoveIndex;
+        updateButtonStates();
     }
+
+    // Main Solve Toggle Logic
+    btnCalculate.onclick = () => {
+        if (!isSolverReady) return;
+        
+        if (solutionMoves.length === 0) {
+            // Calculate
+            loadingText.textContent = "Calculating Solution...";
+            loadingSpinner.style.display = 'block';
+            loadingOverlay.style.display = 'flex';
+            
+            setTimeout(() => {
+                try {
+                    const faceletString = getFaceletString();
+                    const cube = Cube.fromString(faceletString);
+                    const solutionString = cube.solve();
+                    
+                    if (solutionString) {
+                        solutionMoves = solutionString.trim().split(/\s+/);
+                        currentMoveIndex = 0;
+                        renderMoveList();
+                        isPlaying = true;
+                        btnCalculate.innerHTML = `⏸ Pause Solution`;
+                        playNextMove();
+                    } else {
+                        alert("This cube state is invalid or unsolvable. Please check your colors.");
+                    }
+                } catch (e) {
+                    console.error(e);
+                    alert("Error solving cube. Make sure you have exactly 9 of each color and standard centers.");
+                }
+                loadingOverlay.style.display = 'none';
+            }, 50);
+
+        } else {
+            // Toggle Pause/Resume
+            if (isPlaying) {
+                stopPlayback();
+                btnCalculate.innerHTML = `▶ Resume Solution`;
+            } else {
+                if (currentMoveIndex >= solutionMoves.length) return;
+                isPlaying = true;
+                btnCalculate.innerHTML = `⏸ Pause Solution`;
+                playNextMove();
+            }
+        }
+    };
 
     function playNextMove() {
         if (currentMoveIndex >= solutionMoves.length) {
-            stopPlayback(); return;
+            stopPlayback();
+            btnCalculate.innerHTML = `⚡ Solve Current Cube State`;
+            return;
         }
         const move = solutionMoves[currentMoveIndex];
         executeMove(move, () => {
@@ -792,57 +788,55 @@
         });
     }
 
-    document.getElementById('btn-play').onclick = () => {
-        if (isPlaying || currentMoveIndex >= solutionMoves.length) return;
-        isPlaying = true;
-        playNextMove();
-    };
-
     function stopPlayback() {
         isPlaying = false;
         clearTimeout(playTimeout);
+        if (currentMoveIndex < solutionMoves.length) {
+            btnCalculate.innerHTML = `▶ Resume Solution`;
+        }
     }
 
-    document.getElementById('btn-pause').onclick = stopPlayback;
-    
-    // Rewind / Previous Move Logic
-    document.getElementById('btn-prev').onclick = () => {
+    // Step Controls
+    btnPrev.onclick = () => {
         stopPlayback();
-        if (currentMoveIndex > 0) {
+        if (currentMoveIndex > 0 && !isAnimating && moveQueue.length === 0) {
             currentMoveIndex--;
             const moveToUndo = solutionMoves[currentMoveIndex];
             const inverseMove = getInverseMove(moveToUndo);
             executeMove(inverseMove, () => {
                 updateUIState();
+                btnCalculate.innerHTML = currentMoveIndex === 0 ? `⚡ Solve Current Cube State` : `▶ Resume Solution`;
             });
         }
     };
-    
-    // Skip to End Logic
-    document.getElementById('btn-skip').onclick = () => {
+
+    btnNext.onclick = () => {
+        stopPlayback();
+        if (currentMoveIndex < solutionMoves.length && !isAnimating && moveQueue.length === 0) {
+            const move = solutionMoves[currentMoveIndex];
+            executeMove(move, () => {
+                currentMoveIndex++;
+                updateUIState();
+                btnCalculate.innerHTML = currentMoveIndex >= solutionMoves.length ? `⚡ Solve Current Cube State` : `▶ Resume Solution`;
+            });
+        }
+    };
+
+    btnSkip.onclick = () => {
         stopPlayback();
         if (currentMoveIndex >= solutionMoves.length) return;
         
-        // Queue all remaining moves immediately
         const remainingMoves = solutionMoves.slice(currentMoveIndex);
         currentMoveIndex = solutionMoves.length;
         updateUIState();
+        btnCalculate.innerHTML = `⚡ Solve Current Cube State`;
         
         remainingMoves.forEach(move => executeMove(move));
     };
 
-    document.getElementById('btn-stop').onclick = () => { 
+    btnReset.onclick = () => { 
         stopPlayback(); 
         window.location.reload(); 
-    };
-    
-    document.getElementById('btn-next').onclick = () => {
-        stopPlayback();
-        if (currentMoveIndex < solutionMoves.length) {
-            executeMove(solutionMoves[currentMoveIndex], () => {
-                currentMoveIndex++; updateUIState();
-            });
-        }
     };
 
     slider.oninput = (e) => {
@@ -851,10 +845,8 @@
         
         stopPlayback();
         
-        // Basic slider jumping: if moving forward, execute moves. 
-        // If moving back, just reload to prevent complex undo logic for large jumps.
         if (targetIndex < currentMoveIndex) {
-            alert("Please use the 'Reset' (↺) button to go back to the start, or use the ⏮ button to step back one by one.");
+            alert("Please use the ⏮ (Previous) button to step backward.");
             slider.value = currentMoveIndex;
             return;
         }
@@ -863,6 +855,69 @@
         currentMoveIndex = targetIndex;
         updateUIState();
         movesToExecute.forEach(move => executeMove(move));
+        
+        btnCalculate.innerHTML = currentMoveIndex >= solutionMoves.length ? `⚡ Solve Current Cube State` : `▶ Resume Solution`;
+    };
+
+    function jumpToMove(index) {
+        if (isAnimating || moveQueue.length > 0) return;
+        slider.value = index;
+        slider.oninput({ target: slider });
+    }
+
+    // ==========================================
+    // 8. SCRAMBLE ACTIONS
+    // ==========================================
+    btnRandomScramble.onclick = () => {
+        stopPlayback();
+        solutionMoves = [];
+        renderMoveList();
+        btnCalculate.innerHTML = `⚡ Solve Current Cube State`;
+
+        const faces = ['R', 'L', 'U', 'D', 'F', 'B'];
+        const modifiers = ['', "'", '2'];
+        const scramble = [];
+        for (let i = 0; i < 20; i++) {
+            const face = faces[Math.floor(Math.random() * faces.length)];
+            if (scramble.length > 0 && scramble[scramble.length - 1][0] === face) { i--; continue; }
+            const mod = modifiers[Math.floor(Math.random() * modifiers.length)];
+            scramble.push(face + mod);
+        }
+        let scrambleIndex = 0;
+        function applyScramble() {
+            if (scrambleIndex < scramble.length) {
+                executeMove(scramble[scrambleIndex], () => { scrambleIndex++; applyScramble(); });
+            } else {
+                btnCalculate.click();
+            }
+        }
+        applyScramble();
+    };
+
+    btnCustomScramble.onclick = () => {
+        const val = scrambleInput.value.trim().toUpperCase();
+        if (!val) return;
+        const moves = val.split(/\s+/);
+        const validMoves = [];
+        const regex = /^[RLUDFB](\'|2)?$/;
+        for (let m of moves) {
+            if (regex.test(m)) validMoves.push(m);
+            else { alert(`Invalid move: ${m}`); return; }
+        }
+        stopPlayback();
+        solutionMoves = [];
+        renderMoveList();
+        btnCalculate.innerHTML = `⚡ Solve Current Cube State`;
+
+        let idx = 0;
+        function applyScramble() {
+            if (idx < validMoves.length) {
+                executeMove(validMoves[idx], () => { idx++; applyScramble(); });
+            } else {
+                btnCalculate.click();
+            }
+        }
+        applyScramble();
     };
 
     // ==========================================
