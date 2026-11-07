@@ -169,17 +169,23 @@
         }
         .input-group input:focus { border-color: var(--primary-blue); }
 
-        .controls {
+        /* Controls Section */
+        .controls-row {
             display: flex;
-            justify-content: center;
-            gap: 10px;
+            justify-content: space-between;
+            align-items: center;
             margin: 20px 0;
         }
 
+        .controls {
+            display: flex;
+            gap: 8px;
+        }
+
         .control-btn {
-            width: 45px;
-            height: 45px;
-            border-radius: 12px;
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
             border: 1px solid var(--border-color);
             background: white;
             display: flex;
@@ -188,19 +194,33 @@
             cursor: pointer;
             transition: all 0.2s;
             color: var(--text-main);
+            font-size: 16px;
         }
 
-        .control-btn:hover { background: var(--btn-bg); }
+        .control-btn:hover:not(:disabled) { background: var(--btn-bg); }
+        .control-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        
         .control-btn.primary {
             background: var(--primary-blue);
             color: white;
             border-color: var(--primary-blue);
-            width: 55px;
-            height: 55px;
-            border-radius: 14px;
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
+            font-size: 20px;
         }
-        .control-btn.primary:hover { background: var(--primary-blue-hover); }
-        .control-btn svg { width: 20px; height: 20px; fill: currentColor; }
+        .control-btn.primary:hover:not(:disabled) { background: var(--primary-blue-hover); }
+        
+        .speed-control {
+            padding: 8px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: white;
+            font-size: 13px;
+            font-weight: 500;
+            outline: none;
+            cursor: pointer;
+        }
 
         .slider-container {
             width: 100%;
@@ -311,11 +331,22 @@
         <div class="move-list-title" id="move-count-text" style="margin-top:20px;">Solution:</div>
         <div class="moves-grid" id="moves-grid"></div>
 
-        <div class="controls">
-            <button class="control-btn" id="btn-play" title="Play Solution"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
-            <button class="control-btn" id="btn-pause" title="Pause"><svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg></button>
-            <button class="control-btn" id="btn-stop" title="Reset to Start"><svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg></button>
-            <button class="control-btn" id="btn-next" title="Next Move"><svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></button>
+        <!-- NEW CONTROL ROW WITH SPEED AND SKIP -->
+        <div class="controls-row">
+            <div class="controls">
+                <button class="control-btn" id="btn-prev" title="Previous Move">⏮</button>
+                <button class="control-btn primary" id="btn-play" title="Play">▶</button>
+                <button class="control-btn" id="btn-pause" title="Pause">⏸</button>
+                <button class="control-btn" id="btn-next" title="Next Move">⏭</button>
+            </div>
+            <div style="display:flex; gap: 8px; align-items:center;">
+                <select id="speed-control" class="speed-control">
+                    <option value="500">Slow</option>
+                    <option value="250" selected>Normal</option>
+                    <option value="100">Fast</option>
+                </select>
+                <button class="control-btn" id="btn-stop" title="Reset to Start">↺</button>
+            </div>
         </div>
 
         <div class="slider-container">
@@ -335,8 +366,6 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-
-<!-- LOAD BOTH THE CUBE STATE AND THE SOLVER ENGINE -->
 <script src="https://cdn.jsdelivr.net/npm/cubejs@1.3.2/lib/cube.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/cubejs@1.3.2/lib/solve.min.js"></script>
 
@@ -350,6 +379,8 @@
 
     let activeColor = null; 
     let isSolverReady = false;
+    let animationDuration = 200; // Default speed (ms per 90 degree turn)
+
     const container = document.getElementById('canvas-container');
     const loadingOverlay = document.getElementById('loading-overlay');
     const loadingText = document.getElementById('loading-text');
@@ -365,19 +396,17 @@
 
         loadingText.innerHTML = `Compiling Tables...<br><small style="font-weight:normal; font-size:12px; color:#666; margin-top:5px; display:block;">(The screen may freeze for 2 seconds)</small>`;
         
-        // Use setTimeout to allow the UI to paint the loading text before the CPU locks up
         setTimeout(() => {
             try {
                 Cube.initSolver();
                 isSolverReady = true;
                 loadingOverlay.style.display = 'none';
                 
-                // Enable UI buttons now that the solver is ready
+                // Enable UI
                 document.getElementById('scramble-input').disabled = false;
                 document.getElementById('btn-custom-scramble').disabled = false;
                 document.getElementById('btn-random-scramble').disabled = false;
                 document.getElementById('btn-calculate').disabled = false;
-                
             } catch (e) {
                 loadingText.innerHTML = `❌ Error: ${e.message || e}`;
                 console.error(e);
@@ -521,11 +550,10 @@
         scene.add(pivot);
         layerCubies.forEach(c => pivot.attach(c));
 
-        const duration = 150;
         const startTime = performance.now();
 
         function animateRotation(time) {
-            let progress = Math.min((time - startTime) / duration, 1);
+            let progress = Math.min((time - startTime) / animationDuration, 1);
             progress = 1 - (1 - progress) * (1 - progress);
             const currentAngle = angle * progress;
             
@@ -573,6 +601,13 @@
     function executeMove(move, callback) {
         moveQueue.push({ move, callback });
         if (!isAnimating && moveQueue.length === 1) processQueue();
+    }
+    
+    // Helper to reverse a move
+    function getInverseMove(move) {
+        if (move.endsWith("'")) return move[0];
+        if (move.endsWith("2")) return move;
+        return move + "'";
     }
 
     // ==========================================
@@ -622,6 +657,11 @@
     // ==========================================
     // 7. UI ACTIONS
     // ==========================================
+    document.getElementById('speed-control').onchange = (e) => {
+        const val = parseInt(e.target.value);
+        animationDuration = val === 100 ? 100 : (val === 250 ? 200 : 300); // Map dropdown to animation ms
+    };
+
     document.getElementById('btn-calculate').onclick = () => {
         if (!isSolverReady) return;
         loadingText.textContent = "Calculating Solution...";
@@ -705,7 +745,7 @@
     let solutionMoves = [];
     let currentMoveIndex = 0;
     let isPlaying = false;
-    let playInterval = null;
+    let playTimeout = null;
     
     const movesGrid = document.getElementById('moves-grid');
     const moveCountText = document.getElementById('move-count-text');
@@ -745,7 +785,10 @@
         executeMove(move, () => {
             currentMoveIndex++;
             updateUIState();
-            if (isPlaying) playInterval = setTimeout(playNextMove, 250);
+            if (isPlaying) {
+                const delay = parseInt(document.getElementById('speed-control').value);
+                playTimeout = setTimeout(playNextMove, delay);
+            }
         });
     }
 
@@ -757,11 +800,42 @@
 
     function stopPlayback() {
         isPlaying = false;
-        clearTimeout(playInterval);
+        clearTimeout(playTimeout);
     }
 
     document.getElementById('btn-pause').onclick = stopPlayback;
-    document.getElementById('btn-stop').onclick = () => { stopPlayback(); window.location.reload(); };
+    
+    // Rewind / Previous Move Logic
+    document.getElementById('btn-prev').onclick = () => {
+        stopPlayback();
+        if (currentMoveIndex > 0) {
+            currentMoveIndex--;
+            const moveToUndo = solutionMoves[currentMoveIndex];
+            const inverseMove = getInverseMove(moveToUndo);
+            executeMove(inverseMove, () => {
+                updateUIState();
+            });
+        }
+    };
+    
+    // Skip to End Logic
+    document.getElementById('btn-skip').onclick = () => {
+        stopPlayback();
+        if (currentMoveIndex >= solutionMoves.length) return;
+        
+        // Queue all remaining moves immediately
+        const remainingMoves = solutionMoves.slice(currentMoveIndex);
+        currentMoveIndex = solutionMoves.length;
+        updateUIState();
+        
+        remainingMoves.forEach(move => executeMove(move));
+    };
+
+    document.getElementById('btn-stop').onclick = () => { 
+        stopPlayback(); 
+        window.location.reload(); 
+    };
+    
     document.getElementById('btn-next').onclick = () => {
         stopPlayback();
         if (currentMoveIndex < solutionMoves.length) {
@@ -769,6 +843,26 @@
                 currentMoveIndex++; updateUIState();
             });
         }
+    };
+
+    slider.oninput = (e) => {
+        const targetIndex = parseInt(e.target.value);
+        if (targetIndex === currentMoveIndex) return;
+        
+        stopPlayback();
+        
+        // Basic slider jumping: if moving forward, execute moves. 
+        // If moving back, just reload to prevent complex undo logic for large jumps.
+        if (targetIndex < currentMoveIndex) {
+            alert("Please use the 'Reset' (↺) button to go back to the start, or use the ⏮ button to step back one by one.");
+            slider.value = currentMoveIndex;
+            return;
+        }
+        
+        const movesToExecute = solutionMoves.slice(currentMoveIndex, targetIndex);
+        currentMoveIndex = targetIndex;
+        updateUIState();
+        movesToExecute.forEach(move => executeMove(move));
     };
 
     // ==========================================
